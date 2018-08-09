@@ -1,5 +1,6 @@
 package basketball
 
+import basketball.sanitization.EventSet
 import org.scalatest.{FlatSpecLike, Matchers}
 
 import scala.io.Source
@@ -7,9 +8,17 @@ import scala.io.Source
 
 class MatchStateSpec extends FlatSpecLike with Matchers with Parser {
 
+  private def getNewMatchState() = {
+    new MatchState {
+      override def sanitize(pendingEvents: List[MatchEvent], lastEvent: Option[MatchEvent], strictSanitization: Boolean): EventSet = {
+        EventSet(lastEvent.toList ++ pendingEvents, Nil)
+      }
+    }
+  }
+
   it should "Get last event correctly" in {
     val eventsRaw = Source.fromResource("sample1.txt").getLines.toList
-    val matchState = new MatchState
+    val matchState = getNewMatchState
     eventsRaw.foreach { encodedEvent =>
       parse(encodedEvent).map(matchState.addEvent)
     }
@@ -19,7 +28,7 @@ class MatchStateSpec extends FlatSpecLike with Matchers with Parser {
 
   it should "Get last 3 events correctly" in {
     val eventsRaw = Source.fromResource("sample2.txt").getLines.toList
-    val matchState = new MatchState
+    val matchState = getNewMatchState
     eventsRaw.foreach { encodedEvent =>
       parse(encodedEvent).map(matchState.addEvent)
     }
@@ -31,7 +40,7 @@ class MatchStateSpec extends FlatSpecLike with Matchers with Parser {
 
   it should "Get all events correctly without duplicated events" in {
     val eventsRaw = Source.fromResource("sample2.txt").getLines.toList
-    val matchState = new MatchState
+    val matchState = getNewMatchState
     eventsRaw.foreach { encodedEvent =>
       parse(encodedEvent).map(matchState.addEvent)
     }
