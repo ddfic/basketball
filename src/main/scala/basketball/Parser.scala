@@ -2,7 +2,6 @@ package basketball
 
 import scala.util.Try
 
-// TODO consts
 object Parser {
   val LAST_BIT_INDEX = 31
   val POINTS_SCORED_START = 0

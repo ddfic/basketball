@@ -4,31 +4,31 @@ import basketball.MatchEvent
 
 import scala.annotation.tailrec
 
-trait EventSanitization {
-  def sanitize(pendingEvents: List[MatchEvent], lastEvent: Option[MatchEvent], strictSanitization: Boolean): EventSet = {
+trait EventSetSanitization {
+  def sanitize(pendingEvents: List[MatchEvent], lastEvent: Option[MatchEvent]): EventSet = {
     if(lastEvent.isEmpty) {
       if(pendingEvents.headOption.map(isInitialEvent).getOrElse(false)) {
-        sanitizeSet(EventSet(List(pendingEvents.head), pendingEvents.tail), strictSanitization)
+        sanitizeSet(EventSet(List(pendingEvents.head), pendingEvents.tail))
       }
       else {
         EventSet(lastEvent.toList, pendingEvents)
       }
     }
     else {
-      sanitizeSet(EventSet(lastEvent.toList.sortBy(_.elapsedMatchTime), pendingEvents), strictSanitization)
+      sanitizeSet(EventSet(lastEvent.toList.sortBy(_.elapsedMatchTime), pendingEvents))
     }
   }
 
   @tailrec
-  private def sanitizeSet(eventSet: EventSet, strictSanitization: Boolean): EventSet = {
-    if(eventSet.missingEvent || eventSet.pending.isEmpty || eventSet.sanitized.isEmpty) {
+  private def sanitizeSet(eventSet: EventSet): EventSet = {
+    if(eventSet.sanitizationStatus != EventValidationResult.VALID || eventSet.pending.isEmpty || eventSet.sanitized.isEmpty) {
       eventSet
     }
     else {
       val currentEvent = eventSet.pending.head
       val lastEvent = eventSet.sanitized.head
       val result =
-        if(currentEvent.elapsedMatchTime < lastEvent.elapsedMatchTime) {
+        if(currentEvent.elapsedMatchTime <= lastEvent.elapsedMatchTime) {
           // removing event because it's introducing inconsistency to already consistent set
           eventSet.copy(pending = eventSet.pending.tail)
         }
@@ -42,9 +42,9 @@ trait EventSanitization {
         }
         else {
           val validationResults = validateEvent(currentEvent, lastEvent)
-          handleValidationResults(validationResults, eventSet, strictSanitization)
+          handleValidationResults(validationResults, eventSet)
         }
-      sanitizeSet(result, strictSanitization)
+      sanitizeSet(result)
     }
   }
 
@@ -57,18 +57,18 @@ trait EventSanitization {
     }
   }
 
-  private def handleValidationResults(validationResult: EventValidationResult.Value, eventSet: EventSet, strictSanitization: Boolean) = {
+  private def handleValidationResults(validationResult: EventValidationResult.Value, eventSet: EventSet) = {
     validationResult match {
       case EventValidationResult.VALID =>
         eventSet.copy(eventSet.pending.head::eventSet.sanitized, eventSet.pending.tail)
-      case EventValidationResult.NON_CONSECUTIVE =>
-        if(strictSanitization) {
-          eventSet.copy(missingEvent = true)
-        }
-        else {
-          eventSet.copy(eventSet.pending.head::eventSet.sanitized, eventSet.pending.tail)
-        }
-      case EventValidationResult.MALFORMED => eventSet.copy(missingEvent = true) // TODO handle malformed events
+      case EventValidationResult.ONE_MISSING =>
+        val isMalformed = (for {
+          current <- eventSet.pending.headOption
+          next <- eventSet.pending.tail.headOption
+        } yield current.team1PointsTotal > next.team1PointsTotal || current.team2PointsTotal > next.team2PointsTotal).getOrElse(false)
+        eventSet.copy(sanitizationStatus = if(isMalformed) EventValidationResult.ONE_NUMBER_MALFORMED else EventValidationResult.ONE_MISSING)
+      case _ =>
+        eventSet.copy(sanitizationStatus = validationResult)
     }
   }
 
@@ -89,17 +89,22 @@ trait EventSanitization {
                       currentTeam2PointsTotal: Int,
                       previousTeam1PointsTotal: Int,
                       previousTeam2PointsTotal: Int) = {
-    // TODO: detect malformed events
-    if (currentTeam1PointsTotal == previousTeam1PointsTotal + pointsScored) {
-      if (currentTeam2PointsTotal == previousTeam2PointsTotal) {
-        EventValidationResult.VALID
-      }
-      else {
-        EventValidationResult.NON_CONSECUTIVE
-      }
+    if (currentTeam1PointsTotal == previousTeam1PointsTotal + pointsScored && currentTeam2PointsTotal == previousTeam2PointsTotal) {
+      EventValidationResult.VALID
     }
     else {
-      EventValidationResult.NON_CONSECUTIVE
+      val team1Diff = currentTeam1PointsTotal - previousTeam1PointsTotal - pointsScored
+      val team2Diff = currentTeam2PointsTotal - previousTeam2PointsTotal
+      if(team1Diff == 0 && Set(1, 2, 3).contains(team2Diff) ||
+        team2Diff == 0 && Set(1, 2, 3).contains(team1Diff)) {
+        EventValidationResult.ONE_MISSING
+      }
+      else if(team1Diff == 0 || team2Diff == 0) {
+        EventValidationResult.ONE_NUMBER_MALFORMED
+      }
+      else {
+        EventValidationResult.INVALID
+      }
     }
   }
 }

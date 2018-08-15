@@ -10,7 +10,7 @@ class MatchStateSpec extends FlatSpecLike with Matchers with Parser {
 
   private def getNewMatchState() = {
     new MatchState {
-      override def sanitize(pendingEvents: List[MatchEvent], lastEvent: Option[MatchEvent], strictSanitization: Boolean): EventSet = {
+      override def sanitize(pendingEvents: List[MatchEvent], lastEvent: Option[MatchEvent]): EventSet = {
         EventSet(lastEvent.toList ++ pendingEvents, Nil)
       }
     }
